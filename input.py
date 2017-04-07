@@ -7,9 +7,12 @@ from scipy.misc import imsave
 import cv2
 import imageio
 import nibabel as nb
+import imutils
+
 
 from scipy import ndimage
 from scipy import misc
+from PIL import Image
 
 def get_patient_number(i):
     if (i < 10):
@@ -34,55 +37,53 @@ def dicom_to_png(dicom_file, png_file):
 	#print dicom_file
 	imsave(png_file, image)
 
-	'''
-	#rescale between 0-255
-	scaled_images = []
-	for row in images:
-		scaled_row = []
-		for col in row:
-			scaled_col = int((float(col) / float(max_value)) * 255.0)
-			scaled_row.append(scaled_col)
-		scaled_images.append(scaled_row)
-
-	print scaled_images
-
-	#write png files
-	f = png.Writer(shape[1], shape[0], greyscale = True)
-	f.write(png_file, scaled_images)
-	'''
-
 def png_to_binary(png_file, binary_file):
-	png_data = cv2.imread(png_file, cv2.CV_LOAD_IMAGE_GRAYSCALE)
-	(thresh, binary_image) = cv2.threshold(png_data, 128, 255, cv2.THRESH_BINARY)
+	png_data = cv2.imread(png_file)
+	(thresh, binary_image) = cv2.threshold(png_data, 129, 255, cv2.THRESH_BINARY)
 
+	#print png_data.shape
 	cv2.imwrite(binary_file, binary_image)
 
-def hdr_to_png(hdr_file, png_file):
-	print hdr_file
-	image = nb.load(hdr_file)
-	print image
-	data = image.get_data()
-	print 'data shape lol'
-	shape = data.shape
-	print 'shape'
-	print shape
-	print 'data lol'
+def hdr_to_png(hdr_file, png_file, index):
+	#print hdr_file
+	image = nb.load(hdr_file) #annotation
+	#print image
+	image_data = image.get_data() #img3d
+	#print 'data shape lol'
+	shape = image_data.shape #img.shape
+	#print 'shape'
+	#print shape
+	#print 'data lol'
+	#print image_data
+	#insert backup code here
 	x = shape[0]
 	y = shape[1]
-	#print x, y, z
-	#z = hdr_data[3]
-	t = 20
-	s = shape[2]/t
+	s = shape[2]
 
-	image_array = np.zeros(x*y*s).reshape((x, y, s))
 
-	for T in range(t):
-		for S in range(s):
-			for X in range(x):
-				for Y in range(y):
-					st = S*t + T
-					image_array[S, T, y - 1 - Y] = data[X, Y, st]
-	print image_array
+	image_3d = np.zeros(x*y*s).reshape((x, y, s))
+
+	for S in range(s):
+		for X in range(x):
+			for Y in range(y):
+				image_3d[X, Y, S] = image_data[X, Y, S]
+	X = image_3d.shape[0]
+	Y = image_3d.shape[1]
+	S = image_3d.shape[2]
+	i = 0
+	for s in range(S):
+		image_2d = np.zeros(X*Y).reshape((X, Y))
+		for x in range(X):
+			for y in range(Y):
+				image_2d[x, y] = image_3d[x, y, s]
+		png_file_name = png_file + 'P%d-%04d' % (index, i) + '.png'
+		i = i + 1
+		imsave(png_file_name, image_2d)
+		image_rotate = cv2.imread(png_file_name)
+		new_image = imutils.rotate_bound(image_rotate, -90)
+		imsave(png_file_name, new_image)
+
+
 
 def convert_to_png_from_dicom(dicom_file_path, png_file_path, index):
 	#check that dicom file exists
@@ -128,9 +129,9 @@ def convert_to_png_from_hdr(hdr_file_path, png_file_path, index):
 	for i in range(len(hdr_files)):
 		hdr_file = hdr_files[i]
 		check_to_create_dir(png_file_path)
-		png_file = png_file_path + 'P%d-%04d' % (index, i) + '.png'
+		png_file = png_file_path
 		#print png_file
-		hdr_to_png(hdr_file, png_file)
+		hdr_to_png(hdr_file, png_file, index)
 
 def convert_to_binary(png_file_path, binary_file_path, index):
 	#check that dicom file exists
@@ -157,7 +158,7 @@ def convert_to_binary(png_file_path, binary_file_path, index):
 
 def setup(path):
 	#create folders for png
-	for i in range(1, 16):
+	for i in range(1, 17):
 		print 'Working on Patient {}'.format(i)
 
 		p = get_patient_number(i)
@@ -172,14 +173,50 @@ def setup(path):
 			real_dicom_dir = dicom_sub_alt
 			real_hdr_dir = real_dicom_dir
 
-		png_sub = 'P{}/P{}png/'.format(p, p)
-		png_dir = path + png_sub
+		#train
+		png_original_sub = 'P{}/P{}original/'.format(p, p)
+		png_original_dir = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/train/' + png_original_sub
 
-		convert_to_png_from_hdr(real_hdr_dir, png_dir, i)
+		convert_to_png_from_dicom(real_dicom_dir, png_original_dir, i)
+
+		png_segmented_sub = 'P{}/P{}segmented/'.format(p, p)
+		png_segmented_dir = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/train/' + png_segmented_sub
+
+		convert_to_png_from_hdr(real_hdr_dir, png_segmented_dir, i)
 
 		binary_sub = 'P{}/P{}binary/'.format(p, p)
-		binary_dir = path + binary_sub
-		convert_to_binary(png_dir, binary_dir, i)
+		binary_dir = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/train/' + binary_sub
+		convert_to_binary(png_segmented_dir, binary_dir, i)
+
+		#test
+		png_original_sub1 = 'P{}/P{}original/'.format(p, p)
+		png_original_dir1 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/test/' + png_original_sub1
+
+		convert_to_png_from_dicom(real_dicom_dir, png_original_dir1, i)
+
+		png_segmented_sub1 = 'P{}/P{}segmented/'.format(p, p)
+		png_segmented_dir1 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/test/' + png_segmented_sub1
+
+		convert_to_png_from_hdr(real_hdr_dir, png_segmented_dir1, i)
+
+		binary_sub1 = 'P{}/P{}binary/'.format(p, p)
+		binary_dir1 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/test/' + binary_sub1
+		convert_to_binary(png_segmented_dir1, binary_dir1, i)
+
+		#valid
+		png_original_sub2 = 'P{}/P{}original/'.format(p, p)
+		png_original_dir2 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/valid/' + png_original_sub2
+
+		convert_to_png_from_dicom(real_dicom_dir, png_original_dir2, i)
+
+		png_segmented_sub2 = 'P{}/P{}segmented/'.format(p, p)
+		png_segmented_dir2 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/valid/' + png_segmented_sub2
+
+		convert_to_png_from_hdr(real_hdr_dir, png_segmented_dir2, i)
+
+		binary_sub2 = 'P{}/P{}binary/'.format(p, p)
+		binary_dir2 = '/Users/stevenchen/OneDrive/Documents/UCF/sophomore_2016-2017/Undergraduate Research/RV_CNN_data/valid/' + binary_sub2
+		convert_to_binary(png_segmented_dir2, binary_dir2, i)
 
 		print 'Finished with Patient {}'.format(i)
 
